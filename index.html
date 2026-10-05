@@ -755,7 +755,7 @@ function drawFrog(){
     ctx.translate(-ca * reload * 8 + shake, -sa * reload * 5 + 6); ctx.rotate(ca * .1);
     ctx.drawImage(im, -66, -58, 132, 132);
     ctx.restore();
-    ball(nxt, CX + 36, CY + 36, .55);
+    ball(nxt, CX - ca * 40, CY - sa * 40, .55);
     const t = reload > 0 ? 1 - reload / .18 : 1;
     const k = (.2 + .8 * t) * .85, hx = CX + ca * 50, hy = CY + sa * 50;
     if (bombArmed) bombIcon(hx, hy, k); else ball(cur, hx, hy, k);
