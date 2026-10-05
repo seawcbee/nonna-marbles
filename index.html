@@ -459,7 +459,7 @@ function spawnColor(){
 const SCOLD = [['Ma che fai?!', 'Ma_che_fai'], ['Madonna mia, no!', 'Madonna_mia_no'], ['Ma sei matta?!', 'Ma_sei_matta'], ['Che disastro!', 'Che_disastro'], ['Mamma mia, no!', 'Mama_mia_no'], ['Ma dai!', 'Madai']];
 const PRAISE = [['Brava!', 'Brava'], ['Bravissima, tesoro!', 'Bravisima_tesoro'], ['Che brava!', 'Che_brava'], ['Mangia, mangia!', 'manga_manga'], ['Ecco, così!', 'Eco_Cosi'], ['Bene, bene!', 'Bene_Bene']];
 /* ---------- voice clips: decoded on first tap, played through the same mute switch ---------- */
-const VO = {}; let voLoading = false, voSrc = null;
+const VO = {}; let voLoading = false, voSrc = null, voEnd = 0;
 function loadVoice(){
   if (voLoading || !AC || !window.VOICE) return; voLoading = true;
   for (const [k, uri] of Object.entries(window.VOICE)) {
@@ -470,15 +470,17 @@ function loadVoice(){
 }
 function speak(k){
   if (muted || !AC || !VO[k]) return;
-  try { if (voSrc) voSrc.stop(); } catch (e) {}
+  // never cut her off: if she is mid-line, the new line waits until she has finished
+  const at = Math.max(AC.currentTime, voEnd + .15);
   const src = AC.createBufferSource(), g = AC.createGain();
-  g.gain.value = 1; src.buffer = VO[k]; src.connect(g); g.connect(AC.destination); src.start(); voSrc = src;
+  g.gain.value = 1; src.buffer = VO[k]; src.connect(g); g.connect(AC.destination); src.start(at); voSrc = src;
+  voEnd = at + VO[k].duration;
 }
 let lastLine = null;
 function pickLine(set){ let l; do { l = set[rnd(set.length)]; } while (l === lastLine); lastLine = l; return l; }
 function say(text, m, force, clip){
   const now = performance.now();
-  if (!force && now - lastSay < 9000) return; // at most one remark every 9 seconds
+  if (!force && now - lastSay < (m === 'scold' ? 4000 : 9000)) return; // praise at most every 9s, scolding every 4s
   lastSay = now; mood = m; moodT = 1.5;
   if (clip) speak(clip);
   pops.push({ x: CX, y: CY - 58, t: text, life: 1.7, size: 19 });
@@ -596,7 +598,7 @@ function insertShot(sh, j){
   else {
     chainMul = 0; tone(190, .07, 'sine', .14);
     const same = (balls[i - 1] && balls[i - 1].c === nb.c) || (balls[i + 1] && balls[i + 1].c === nb.c);
-    if (!same && Math.random() < .35) { const l = pickLine(SCOLD); say(l[0], 'scold', false, l[1]); }
+    if (!same && Math.random() < .75) { const l = pickLine(SCOLD); say(l[0], 'scold', false, l[1]); }
   }
 }
 function moveChain(dt){
