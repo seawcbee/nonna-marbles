@@ -714,10 +714,11 @@ function bombIcon(x, y, k){
   ctx.fillStyle = f > .5 ? '#ffd25a' : '#ff6a3a'; ctx.beginPath(); ctx.arc(13, -15, 3 + f * 1.5, 0, TAU); ctx.fill();
   ctx.restore();
 }
-function badge(kind, x, y, sc, c){
+function badge(kind, x, y, sc, c, k){
   ctx.save(); ctx.translate(x, y); if (sc) ctx.scale(sc, sc);
   ctx.beginPath(); ctx.arc(0, 0, 8.5, 0, TAU); ctx.fillStyle = c != null ? DEEP[c] : 'rgba(8,22,18,.9)'; ctx.fill();
-  ctx.lineWidth = 1.6; ctx.strokeStyle = c != null ? GLOW[c] : '#e0a93b'; ctx.stroke();
+  if (c != null && k != null) { ctx.fillStyle = 'rgba(' + RGB[c] + ',' + (.6 * k) + ')'; ctx.fill(); }
+  ctx.lineWidth = 1.6 + (k || 0); ctx.strokeStyle = c != null ? GLOW[c] : '#e0a93b'; ctx.stroke();
   ctx.strokeStyle = '#f3ead2'; ctx.fillStyle = '#f3ead2'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
   if (kind === 'slow') { ctx.beginPath(); ctx.arc(0, 0, 4.6, 0, TAU); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, -2.8); ctx.lineTo(0, 0); ctx.lineTo(2.4, 1.2); ctx.stroke(); }
   else if (kind === 'rew') { for (const dx of [-3.2, 1.8]) { ctx.beginPath(); ctx.moveTo(dx + 3, -3.6); ctx.lineTo(dx - 1.4, 0); ctx.lineTo(dx + 3, 3.6); ctx.closePath(); ctx.fill(); } }
@@ -829,19 +830,11 @@ function draw(dt){
     const p = posAt(b.vs);
     if (p.y > H + R) continue;
     const bx = p.x + b.ox, by = p.y + b.oy;
-    if (b.p) {
-      const k = .5 + .5 * Math.sin(time * 7);
-      const gl = ctx.createRadialGradient(bx, by, R * .6, bx, by, R + 12 + 5 * k);
-      const rgb = RGB[b.c];
-      gl.addColorStop(0, 'rgba(' + rgb + ',' + (.6 + .35 * k) + ')'); gl.addColorStop(1, 'rgba(' + rgb + ',0)');
-      ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(bx, by, R + 12 + 5 * k, 0, TAU); ctx.fill();
-    }
     ball(b.c, bx, by);
     if (b.p) {
+      // the pulse stays inside the marble so it never spills onto its neighbours
       const k = .5 + .5 * Math.sin(time * 7);
-      ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(' + RGBHI[b.c] + ',' + (.55 + .45 * k) + ')';
-      ctx.beginPath(); ctx.arc(bx, by, R + 2 + 3 * k, 0, TAU); ctx.stroke();
-      badge(b.p, bx, by, .9 + .12 * k, b.c);
+      badge(b.p, bx, by, .85 + .25 * k, b.c, k);
     }
   }
   if (state === 'menu') frogA = -Math.PI / 2 + Math.sin(time * .9) * .55;
