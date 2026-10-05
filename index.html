@@ -354,9 +354,11 @@ const attached = i => balls[i - 1].s - balls[i].s <= D + 1.5;
 function baseV(){
   if (rewT > 0) return -130;
   let v = Math.min(40, 11 + 2 * level);
+  if (slowT > 0) v *= .1;
+  // sprint back in whenever the front of the chain is near the start; Slow never dampens this
   const h = balls[0];
-  v += (rush && h && h.s < 320 ? 110 * (1 - h.s / 320) : 0);
-  return slowT > 0 ? v * .1 : v;
+  if (rush && h && h.s < 320) v += 110 * (1 - h.s / 320);
+  return v;
 }
 function pickColor(){
   if (!balls.length) return rnd(nc);
@@ -392,7 +394,7 @@ function spawnPower(){
 function slotUI(){}
 function grant(p, x, y){
   if (p === 'bomb' && bombArmed) { score += 50; pops.push({ x, y: y - 34, t: '+50', life: 1, size: 16 }); return; }
-  if (p === 'slow') { slowT = 7; rewT = 0; }
+  if (p === 'slow') { slowT = 7; }
   else if (p === 'rew') { rewT = 2.2; slowT = 0; }
   else bombArmed = true;
   pops.push({ x, y: y - 30, t: { slow: 'Slow!', rew: 'Rewind!', bomb: 'Bomb ready!' }[p], life: 1.4, size: 26 });
@@ -408,7 +410,7 @@ function applyRewind(){
 function usePower(){
   if (state !== 'play' || !slot) return;
   const p = slot; slot = null;
-  if (p === 'slow') { slowT = 7; rewT = 0; }
+  if (p === 'slow') { slowT = 7; }
   else if (p === 'rew') { rewT = 2.2; slowT = 0; }
   else bombArmed = true;
   pops.push({ x: CX, y: CY - 64, t: { slow: 'Slow!', rew: 'Rewind!', bomb: 'Bomb armed!' }[p], life: 1.2, size: 24 });
@@ -497,7 +499,7 @@ function moveChain(dt){
   const n = balls.length; if (!n) return;
   const h0 = balls[0].s;
   let v = baseV();
-  if (rewT > 0 && h0 <= START_S) v = 0;
+  if (rewT > 0 && h0 <= START_S) { rewT = 0; v = baseV(); }
   const gs = []; let a0 = 0;
   for (let i = 1; i < n; i++) if (!attached(i)) { gs.push([a0, i - 1]); a0 = i; }
   gs.push([a0, n - 1]);
@@ -507,7 +509,8 @@ function moveChain(dt){
   if (rewT > 0) vel.fill(v);
   else {
     for (let k = 0; k < G; k++) {
-      vel[k] = k === G - 1 ? v : -BACK;
+      // while there is a gap, the rear section closes it quickly instead of crawling
+      vel[k] = k === G - 1 ? (G > 1 ? Math.max(v, 160) : v) : -BACK;
     }
   }
   for (let k = 0; k < G; k++) {
