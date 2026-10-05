@@ -67,6 +67,8 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
   position:absolute;inset:0;display:none;align-items:center;justify-content:center;
   background:rgba(3,12,9,.5);
 }
+#fx2{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;display:none}
+#fx2.on{display:block}
 #ov.show{display:flex}
 .card{
   width:80%;padding:calc(var(--u)*26) calc(var(--u)*20) calc(var(--u)*24);text-align:center;
@@ -119,7 +121,8 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
     <div id="bar"><i id="barFill"></i></div>
     <div id="fx"></div>
     <div id="toast"></div>
-        <div id="ov" class="show">
+        <canvas id="fx2"></canvas>
+    <div id="ov" class="show">
       <div class="card">
         <img id="ovImg" alt="" hidden>
         <h1 id="ovT">Nonna's Marbles</h1>
@@ -270,7 +273,8 @@ const TRACK_L = TRACKS.map((_, i) => { buildPath(i); return L; });
 buildPath(0);
 // seconds the chain takes to cross the whole track at base speed: generous early, shrinking towards a 34 s floor.
 // Speed is derived from this, so a long track and a short track give the same time at the same level.
-function levelTime(lv){ return 34 + 68 / (1 + (lv - 1) / 5) + Math.max(0, 4 - lv) * 14; } // extra breathing room on the first three levels
+const lapOf = lv => Math.floor((lv - 1) / TRACKS.length);           // 0 on the first run through the kitchen
+function levelTime(lv){ return (34 + 68 / (1 + (lv - 1) / 5) + Math.max(0, 4 - lv) * 14) * Math.pow(.86, lapOf(lv)); } // extra breathing room early; each lap is 14% quicker
 function chainSpeed(lv){ return Math.min(70, TRACK_L[(lv - 1) % TRACKS.length] / levelTime(lv)); }
 
 function posAt(s){
@@ -288,14 +292,15 @@ let cur = 0, nxt = 1, reload = 0, frogA = -Math.PI / 2, aimA = -Math.PI / 2;
 let mood = '', moodT = 0, lastSay = 0, rings = [], lastFx = '';
 let slowT = 0, rewT = 0, bombArmed = false, sinceP = 0;
 let down = false, downSwap = false, ptype = 'touch', time = 0, px = 1;
-let lives = 3, bestLevel = 1;
+let lives = 3, bestLevel = 1, wins = 0, runSecs = 0, fete = 0;
 // per-level stats for the clear screen and bonuses
 let lvStart = 0, lvShots = 0, lvHits = 0, lvBestCombo = 0, streak = 0, lvBestStreak = 0;
 try {
   best = +localStorage.getItem('nm-best') || +localStorage.getItem('frogstone-best') || 0;
   bestLevel = +localStorage.getItem('nm-level') || 1;
+  wins = +localStorage.getItem('nm-wins') || 0;
 } catch (e) {}
-function saveBest(){ try { localStorage.setItem('nm-best', best); localStorage.setItem('nm-level', bestLevel); } catch (e) {} }
+function saveBest(){ try { localStorage.setItem('nm-best', best); localStorage.setItem('nm-level', bestLevel); localStorage.setItem('nm-wins', wins); } catch (e) {} }
 
 /* ---------- audio ---------- */
 let AC = null, muted = false;
@@ -334,6 +339,25 @@ function winJingle(){
     if (!last) pluck(f, t0 + d + .055, .16, .07);       // quick tremolo double-pluck
   });
   pluck(1568, t0 + .78, .6, .06); pluck(2093, t0 + .86, .6, .05); // sparkle
+}
+// bigger version for beating the whole kitchen: the jingle, then a tarantella flourish and a strummed chord
+function fanfare(){
+  if (muted || !AC) return;
+  const t0 = AC.currentTime + .05;
+  const pluck = (f, at, len, vol) => {
+    for (const [mul, type, v] of [[1, 'triangle', vol], [2, 'sine', vol * .35]]) {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = type; o.frequency.setValueAtTime(f * mul, at);
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(v, at + .012); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+      o.connect(g); g.connect(AC.destination); o.start(at); o.stop(at + len + .02);
+    }
+  };
+  const run = [[392, 0], [523, .11], [659, .22], [784, .33], [659, .44], [784, .55], [1047, .7]];
+  run.forEach(([f, d]) => { pluck(f, t0 + d, .22, .16); pluck(f, t0 + d + .055, .16, .07); });
+  const flourish = [[1047, 1.0], [988, 1.1], [1047, 1.2], [1175, 1.3], [1047, 1.45], [880, 1.55], [784, 1.65], [880, 1.75], [1047, 1.9]];
+  flourish.forEach(([f, d]) => pluck(f, t0 + d, .2, .15));
+  [523, 659, 784, 1047, 1319].forEach((f, i) => pluck(f, t0 + 2.2 + i * .04, 1.4, .14)); // strummed C chord
+  pluck(2093, t0 + 2.5, .8, .05);
 }
 const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
 
@@ -385,6 +409,7 @@ function resize(){
   stage.style.width = W * sc + 'px'; stage.style.height = H * sc + 'px';
   stage.style.setProperty('--u', sc + 'px');
   cv.width = Math.round(W * sc * dpr); cv.height = Math.round(H * sc * dpr);
+  $('fx2').width = cv.width; $('fx2').height = cv.height;
   px = cv.width / W;
   buildBg(); buildSprites();
 }
@@ -450,7 +475,7 @@ function musicTick(dt){
   if (!mGain || !AC) return;
   let t = 0;
   if (musicOn && !muted) {
-    if (state === 'play') t = MUSIC_VOL; else if (state === 'paused' || state === 'clear') t = MUSIC_VOL * .45;
+    if (state === 'play') t = MUSIC_VOL; else if (state === 'paused' || state === 'clear' || state === 'won') t = MUSIC_VOL * .45;
     if (AC.currentTime < duckUntil) t *= .3;               // dip while she speaks
   }
   if (mPending >= 0) { t = 0; if (mGain.gain.value < .008) { switchSong(mPending); return; } } // fading out the previous song
@@ -679,9 +704,11 @@ function startLevel(){
   state = 'play'; hideOverlay(); hud(); musicSync();
   const fresh = POWER_ORDER[level - 2];
   if (fresh) toast('Look out for ' + CNAME[PCOL[fresh]].toLowerCase() + ' ' + PNAME[fresh] + ' marbles', 3200);
+  else toast('Level ' + level + ' · ' + TRACK_NAMES[(level - 1) % TRACKS.length] + (lapOf(level) ? ' · Helping ' + (lapOf(level) + 1) : ''), 1800);
 }
-function startGame(){ score = 0; level = 1; lives = 3; startLevel(); }
-const bestLine = () => 'Best score ' + best.toLocaleString() + ' · Furthest level ' + bestLevel;
+function startGame(){ score = 0; level = 1; lives = 3; runSecs = 0; startLevel(); }
+const bestLine = () => 'Best score ' + best.toLocaleString() + ' · Furthest level ' + bestLevel + (wins ? ' · Kitchen cleared ×' + wins : '');
+const mmss = s => { const m = Math.floor(s / 60), r = Math.round(s % 60); return m ? m + ' min ' + r + ' s' : r + ' s'; };
 function demoChain(){
   balls = []; let seed = 3;
   for (let i = 0; i < 26; i++) {
@@ -709,10 +736,26 @@ function endLevelCheck(){
     state = 'clear';
     const secs = (performance.now() - lvStart) / 1000, acc = lvShots ? lvHits / lvShots : 1;
     // clear bonus: a flat part, plus accuracy, plus time left on the clock
-    const bonus = 100 * level + Math.round(acc * acc * 100 * level) + Math.max(0, Math.round((levelTime(level) - secs) * level));
+    const bonus = 100 * level + Math.round(acc * acc * 100 * level) + Math.max(0, Math.round((levelTime(level) - secs) * level)) + (level % TRACKS.length === 0 ? 1000 * (lapOf(level) + 1) : 0);
     score += bonus; hud(); say('Bravissima!', 'happy', true);
+    runSecs += secs;
+    if (score > best) best = score;
+    if (level % TRACKS.length === 0) {
+      // every track in the kitchen cleared: the big screen, confetti, and a second helping with lives topped up
+      state = 'won'; fete = 3.5; wins++; saveBest(); fanfare();
+      const lap = lapOf(level) + 1, topUp = lives < 3;
+      lives = 3; hud();
+      showOverlay({ title: lap === 1 ? 'Kitchen cleared!' : 'Cleared again!', face: 'n1',
+        score: 'Score ' + score.toLocaleString(),
+        stats: 'All ' + TRACKS.length + ' tracks in ' + mmss(runSecs) + (topUp ? ' · Lives topped up' : ''),
+        body: lap === 1 ? 'Brava! Every plate is clean and Nonna could not be prouder. Fancy a second helping? The chains come back faster.'
+                        : 'Still standing after helping ' + lap + '! The chains speed up again. Mangia, mangia.',
+        btn: lap === 1 ? 'Second helping' : 'Another helping', fn: () => { level++; startLevel(); },
+        meta: bestLine() });
+      return;
+    }
+    saveBest();
     winJingle();
-    if (score > best) { best = score; saveBest(); }
     const nextNc = Math.min(6, 2 + Math.ceil((level + 1) / 2)), faster = chainSpeed(level + 1) > chainSpeed(level) * 1.03;
     const pw = POWER_ORDER[level - 1];
     // what is new next level gets its own box with a picture of the marble to look for
@@ -722,7 +765,7 @@ function endLevelCheck(){
     showOverlay({ title: 'Level ' + level + ' cleared', face: 'n1',
       score: 'Score ' + score.toLocaleString(),
       stats: Math.round(secs) + ' s · ' + Math.round(acc * 100) + '% accuracy · +' + bonus.toLocaleString() + ' bonus',
-      body: callout ? '' : (faster ? 'The next chain moves faster.' : 'Next up, a new track.'),
+      body: callout ? '' : 'Next up: the ' + TRACK_NAMES[level % TRACKS.length] + (faster ? ', with a faster chain.' : '.'),
       callout, btn: 'Start level ' + (level + 1), fn: () => { level++; startLevel(); },
       meta: (lvBestCombo >= 2 ? 'Best combo ×' + lvBestCombo : 'No combos') + ' · Longest streak ' + lvBestStreak });
   } else if (balls.length && balls[0].s >= L - 4) {
@@ -755,7 +798,8 @@ function update(dt){
     }
   }
   for (let i = parts.length - 1; i >= 0; i--) {
-    const p = parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .96; p.vy *= .96;
+    const p = parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.g) { p.vy += p.g * dt; p.rot += p.spin * dt; } else { p.vx *= .96; p.vy *= .96; }
     if (p.life <= 0) parts.splice(i, 1);
   }
   for (let i = pops.length - 1; i >= 0; i--) {
@@ -763,6 +807,10 @@ function update(dt){
     if (p.life <= 0) pops.splice(i, 1);
   }
   for (let i = rings.length - 1; i >= 0; i--) { const r = rings[i]; r.r += 260 * dt; r.life -= dt; if (r.life <= 0) rings.splice(i, 1); }
+  if (fete > 0) {           // confetti shower while the kitchen-cleared screen is up
+    fete -= dt;
+    for (let i = 0; i < (Math.random() < .6 ? 2 : 1); i++) parts.push({ x: Math.random() * W, y: -10, vx: (Math.random() - .5) * 60, vy: 40 + Math.random() * 90, g: 260, rot: Math.random() * TAU, spin: (Math.random() - .5) * 12, life: 3 + Math.random() * 1.5, c: Math.random() < .35 ? '#e0a93b' : GLOW[rnd(5)], r: 3.2 + Math.random() * 2.4 });
+  }
   if (moodT > 0) moodT -= dt;
   hud();
 }
@@ -874,7 +922,22 @@ function draw(dt){
     ctx.beginPath(); ctx.arc(CX + ca * t, CY + sa * t, 6, 0, TAU); ctx.stroke();
   }
   for (const s of shots) { if (s.bomb) bombIcon(s.x, s.y); else ball(s.c, s.x, s.y); }
-  for (const p of parts) { ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 2)); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill(); }
+  let confetti = false;
+  for (const p of parts) {
+    if (p.g) { confetti = true; continue; }
+    ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 2)); ctx.fillStyle = p.c;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
+  }
+  const f2 = $('fx2');
+  if (confetti || f2.classList.contains('on')) {
+    f2.classList.toggle('on', confetti);
+    const g = f2.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, f2.width, f2.height); g.setTransform(px, 0, 0, px, 0, 0);
+    for (const p of parts) {
+      if (!p.g) continue;
+      g.globalAlpha = Math.max(0, Math.min(1, p.life * 2)); g.fillStyle = p.c;
+      g.save(); g.translate(p.x, p.y); g.rotate(p.rot); g.fillRect(-p.r, -p.r * .45, p.r * 2, p.r * .9); g.restore();
+    }
+  }
   ctx.globalAlpha = 1;
   for (const r of rings) { ctx.globalAlpha = Math.max(0, r.life * 2); ctx.lineWidth = 4; ctx.strokeStyle = '#ffb347'; ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, TAU); ctx.stroke(); }
   ctx.globalAlpha = 1;
