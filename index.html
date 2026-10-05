@@ -520,12 +520,14 @@ function spawnPower(){
 }
 function slotUI(){}
 function grant(p, x, y){
-  if (p === 'bomb' && bombArmed) { score += 50; pops.push({ x, y: y - 34, t: '+50', life: 1, size: 16 }); return; }
+  if (p === 'bomb' && bombArmed) { score += 50; pops.push({ x, y: y - 20, t: '+50', life: .7, size: 16, v: 75 }); return; }
   if (p === 'slow') { slowT = 7; }
   else if (p === 'rew') { rewT = 2.2; slowT = 0; }
   else bombArmed = true;
-  pops.push({ x, y: y - 30, t: { slow: 'Slow!', rew: 'Rewind!', bomb: 'Bomb ready!' }[p], life: 1.4, size: 26 });
+  pops.push({ x, y: y - 26, t: { slow: 'Slow!', rew: 'Rewind!', bomb: 'Bomb ready!' }[p], life: .9, size: 22, v: 70 });
   tone(700, .14, 'sine', .2, 1100); buzz(25);
+  // she always cheers when you pop a power-up
+  { const l = pickLine(PRAISE); say(l[0], 'happy', true, l[1]); }
 }
 function applyRewind(){
   if (!rewPending) return;
@@ -555,9 +557,9 @@ function explode(sh){
   }
   for (let j = 0; j < 22; j++) { const a = Math.random() * TAU, sp = 60 + Math.random() * 160; parts.push({ x: sh.x, y: sh.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: .4 + Math.random() * .3, c: j % 2 ? '#ffd25a' : '#ff6a3a', r: 2 + Math.random() * 3 }); }
   chainMul = 1; score += n * 15;
-  pops.push({ x: sh.x, y: sh.y, t: '+' + n * 15, life: 1, size: 22 });
+  pops.push({ x: sh.x, y: sh.y - 14, t: '+' + n * 15, life: .7, size: 20, v: 75 });
   rings.push({ x: sh.x, y: sh.y, r: 10, life: .5 });
-  pops.push({ x: sh.x, y: sh.y - 26, t: 'Boom!', life: 1, size: 24 });
+  pops.push({ x: sh.x, y: sh.y - 36, t: 'Boom!', life: .8, size: 22, v: 75 });
   tone(110, .35, 'sawtooth', .25, 40); buzz(40); validateAmmo();
 }
 function spawn(){
@@ -593,8 +595,8 @@ function tryRun(i){
     }
   }
   mx /= n; my /= n;
-  pops.push({ x: mx, y: my, t: '+' + pts_, life: 1, size: 20 });
-  if (m > 1) pops.push({ x: mx, y: my - 22, t: 'Combo x' + m, life: 1.1, size: 17 });
+  pops.push({ x: mx, y: my - 14, t: '+' + pts_, life: .7, size: 18, v: 75 });
+  if (m > 1) pops.push({ x: mx, y: my - 34, t: 'Combo x' + m, life: .8, size: 16, v: 75 });
   balls.splice(l, n);
   tone(480 * (1 + .14 * (m - 1)), .16, 'sine', .22, 900 * (1 + .1 * (m - 1)));
   buzz(12);
@@ -748,7 +750,7 @@ function update(dt){
     if (p.life <= 0) parts.splice(i, 1);
   }
   for (let i = pops.length - 1; i >= 0; i--) {
-    const p = pops[i]; p.life -= dt; p.y -= 26 * dt;
+    const p = pops[i]; p.life -= dt; p.y -= (p.v || 26) * dt;
     if (p.life <= 0) pops.splice(i, 1);
   }
   for (let i = rings.length - 1; i >= 0; i--) { const r = rings[i]; r.r += 260 * dt; r.life -= dt; if (r.life <= 0) rings.splice(i, 1); }
@@ -915,7 +917,7 @@ function draw(dt){
   ctx.globalAlpha = 1;
   ctx.textAlign = 'center'; ctx.lineJoin = 'round';
   for (const p of pops) {
-    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.globalAlpha = Math.min(1, p.life * 2.5) * .9;
     ctx.font = p.size + "px 'Lilita One','Trebuchet MS',sans-serif";
     const hw = ctx.measureText(p.t).width / 2 + 10;
     const tx = Math.max(hw, Math.min(W - hw, p.x)), ty = Math.max(p.size + 6, Math.min(H - 8, p.y));
