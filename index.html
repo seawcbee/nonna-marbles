@@ -88,7 +88,18 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 }
 #ovBtn:active{transform:translateY(calc(var(--u)*2));box-shadow:0 calc(var(--u)*2) 0 #9a6b12}
 #ovMeta{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:calc(var(--u)*12.5);color:var(--gold);margin-top:calc(var(--u)*14);opacity:.9}
-#ovMeta[hidden]{display:none}
+#ovScore{font-size:calc(var(--u)*30);line-height:1;color:var(--gold);margin-top:calc(var(--u)*8);text-shadow:0 calc(var(--u)*2) 0 rgba(0,0,0,.45)}
+#ovStats{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:calc(var(--u)*12.5);opacity:.85;margin:calc(var(--u)*6) 0 calc(var(--u)*14)}
+#ovNew{
+  display:flex;align-items:center;gap:calc(var(--u)*12);text-align:left;
+  background:rgba(224,169,59,.14);border:calc(var(--u)*1.5) solid rgba(224,169,59,.6);border-radius:calc(var(--u)*14);
+  padding:calc(var(--u)*10) calc(var(--u)*12);margin:calc(var(--u)*2) 0 calc(var(--u)*18);
+}
+#ovNew canvas{width:calc(var(--u)*62);height:calc(var(--u)*62);flex:none}
+#ovNew small{display:block;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:calc(var(--u)*10.5);letter-spacing:.12em;text-transform:uppercase;color:var(--gold);opacity:.85;margin-bottom:calc(var(--u)*2)}
+#ovNew b{display:block;font-weight:400;font-size:calc(var(--u)*20);line-height:1.1;color:var(--gold);margin-bottom:calc(var(--u)*3)}
+#ovNew span{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:calc(var(--u)*13);line-height:1.35;opacity:.92}
+#ovScore[hidden],#ovStats[hidden],#ovNew[hidden],#ovMeta[hidden],.card p[hidden]{display:none}
 #rotate{display:none;position:fixed;inset:0;z-index:9;background:var(--bg);color:var(--ink);align-items:center;justify-content:center;text-align:center;font-size:22px;padding:24px}
 @media (orientation:landscape) and (pointer:coarse) and (max-height:520px){#rotate{display:flex}}
 </style>
@@ -112,7 +123,10 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
       <div class="card">
         <img id="ovImg" alt="" hidden>
         <h1 id="ovT">Nonna's Marbles</h1>
+        <div id="ovScore" hidden></div>
+        <div id="ovStats" hidden></div>
         <p id="ovB"></p>
+        <div id="ovNew" hidden><canvas id="ovNewIc" width="160" height="160"></canvas><div><small id="ovNewL"></small><b id="ovNewT"></b><span id="ovNewB"></span></div></div>
         <button id="ovBtn">Play</button>
         <div id="ovMeta" hidden></div>
       </div>
@@ -133,14 +147,17 @@ const DEEP = ['#7a0200', '#8a5200', '#1e5a02', '#002a80', '#42027a', '#8a7a62'];
 const RGB = GLOW.map(hex2rgb);
 const PCOL = { slow: 3, rew: 1, bomb: 0 };
 const POWER_ORDER = ['rew', 'slow', 'bomb'];
-const POWER_INTRO = {
-  rew: 'New power-up: yellow Rewind marbles. Pop one and the whole chain rolls back towards the start.',
-  slow: 'New power-up: blue Slow marbles. Pop one and the chain crawls for 7 seconds.',
-  bomb: 'New power-up: red Bomb marbles. Pop one and your next shot explodes, clearing every marble nearby.'
+const PNAME = { rew: 'Rewind', slow: 'Slow', bomb: 'Bomb' };
+const POWER_TIP = {
+  rew: 'Pop a yellow one to roll the whole chain back.',
+  slow: 'Pop a blue one to slow the chain for 7 seconds.',
+  bomb: 'Pop a red one, then your next shot explodes.'
 };
+const CNAME = ['Red', 'Yellow', 'Green', 'Blue', 'Purple', 'Cream'];
 const START_S = 72; // head never sits further back than this, so one marble is always on screen
 const $ = id => document.getElementById(id);
-const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage'), wrap = $('wrap');
+const cv = $('cv'), stage = $('stage'), wrap = $('wrap');
+let ctx = cv.getContext('2d');
 const rnd = n => Math.floor(Math.random() * n);
 
 /* ---------- art ---------- */
@@ -263,7 +280,7 @@ function saveBest(){ try { localStorage.setItem('nm-best', best); localStorage.s
 let AC = null, muted = false;
 try { muted = localStorage.getItem('nm-sound') === '0'; } catch (e) {}
 let toastT = 0;
-function toast(t){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 1300); }
+function toast(t, ms){ const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), ms || 1300); }
 function audio(){
   if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
   if (AC && AC.state === 'suspended') AC.resume();
@@ -639,6 +656,8 @@ function startLevel(){
   if (level > bestLevel) { bestLevel = level; saveBest(); }
   cur = rnd(nc); nxt = rnd(nc); reload = 0;
   state = 'play'; hideOverlay(); hud(); musicSync();
+  const fresh = POWER_ORDER[level - 2];
+  if (fresh) toast('Look out for ' + CNAME[PCOL[fresh]].toLowerCase() + ' ' + PNAME[fresh] + ' marbles', 3200);
 }
 function startGame(){ score = 0; level = 1; lives = 3; startLevel(); }
 const bestLine = () => 'Best score ' + best.toLocaleString() + ' · Furthest level ' + bestLevel;
@@ -674,12 +693,17 @@ function endLevelCheck(){
     winJingle();
     if (score > best) { best = score; saveBest(); }
     const nextNc = Math.min(6, 2 + Math.ceil((level + 1) / 2)), faster = chainSpeed(level + 1) > chainSpeed(level) * 1.03;
-    const next = POWER_ORDER[level - 1] ? POWER_INTRO[POWER_ORDER[level - 1]]
-      : (faster ? 'The next chain is faster' : 'Next up, a new track') + (nextNc > nc ? ' and a new colour.' : '.');
-    showOverlay('Level ' + level + ' cleared',
-      'Cleared in ' + Math.round(secs) + ' s with ' + Math.round(acc * 100) + '% accuracy, +' + bonus.toLocaleString() + ' bonus. Score ' + score.toLocaleString() + '. ' + next,
-      'Start level ' + (level + 1), () => { level++; startLevel(); }, 'n1',
-      (lvBestCombo >= 2 ? 'Best combo ×' + lvBestCombo : 'No combos') + ' · Longest streak ' + lvBestStreak);
+    const pw = POWER_ORDER[level - 1];
+    // what is new next level gets its own box with a picture of the marble to look for
+    const callout = pw ? { c: PCOL[pw], p: pw, label: 'New power-up', head: PNAME[pw], text: POWER_TIP[pw] }
+      : nextNc > nc ? { c: nextNc - 1, p: null, label: 'New colour', head: CNAME[nextNc - 1], text: CNAME[nextNc - 1] + ' marbles join the chain' + (faster ? ', and it moves faster.' : '.') }
+      : null;
+    showOverlay({ title: 'Level ' + level + ' cleared', face: 'n1',
+      score: 'Score ' + score.toLocaleString(),
+      stats: Math.round(secs) + ' s · ' + Math.round(acc * 100) + '% accuracy · +' + bonus.toLocaleString() + ' bonus',
+      body: callout ? '' : (faster ? 'The next chain moves faster.' : 'Next up, a new track.'),
+      callout, btn: 'Start level ' + (level + 1), fn: () => { level++; startLevel(); },
+      meta: (lvBestCombo >= 2 ? 'Best combo ×' + lvBestCombo : 'No combos') + ' · Longest streak ' + lvBestStreak });
   } else if (balls.length && balls[0].s >= L - 4) {
     state = 'dying'; tone(240, .7, 'sawtooth', .1, 60); buzz(60);
   }
@@ -705,8 +729,8 @@ function update(dt){
       state = 'over'; lives--;
       say('Mamma mia, no!', 'scold', true, 'Mama_mia_no', false, true);
       if (score > best) { best = score; saveBest(); }
-      if (lives > 0) showOverlay('It got through!', 'Score ' + score.toLocaleString() + '. ' + lives + (lives === 1 ? ' life' : ' lives') + ' left.', 'Retry level ' + level, startLevel, 'n2', bestLine());
-      else showOverlay('Mamma mia!', 'Game over. Score ' + score.toLocaleString() + '. You reached level ' + level + '.', 'Play again', startGame, 'n2', bestLine());
+      if (lives > 0) showOverlay({ title: 'It got through!', face: 'n2', score: 'Score ' + score.toLocaleString(), body: lives === 1 ? 'Last life!' : lives + ' lives left.', btn: 'Retry level ' + level, fn: startLevel, meta: bestLine() });
+      else showOverlay({ title: 'Mamma mia!', face: 'n2', score: 'Score ' + score.toLocaleString(), body: 'Game over. You reached level ' + level + '.', btn: 'Play again', fn: startGame, meta: bestLine() });
     }
   }
   for (let i = parts.length - 1; i >= 0; i--) {
@@ -858,11 +882,24 @@ function hud(){
   $('barFill').style.width = Math.max(0, Math.min(100, f * 100)) + '%';
 }
 let ovFn = null;
-function showOverlay(t, b, btn, fn, face, meta){
+function drawPowerIcon(c, p){
+  const ic = $('ovNewIc'), g = ic.getContext('2d'), k = ic.width / 44;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, ic.width, ic.height); g.setTransform(k, 0, 0, k, 0, 0);
+  const old = ctx; ctx = g;                          // reuse the in-game marble and badge drawing
+  ball(c, 22, 22, 1); if (p) badge(p, 22, 22, 1.3, c, 1);
+  ctx = old;
+}
+function showOverlay(o){
   const oi = $('ovImg');
-  if (face && ART[face]) { oi.src = ART[face]; oi.hidden = false; } else oi.hidden = true;
-  $('ovT').textContent = t; $('ovB').textContent = b; $('ovBtn').textContent = btn; ovFn = fn;
-  $('ovMeta').textContent = meta || ''; $('ovMeta').hidden = !meta;
+  if (o.face && ART[o.face]) { oi.src = ART[o.face]; oi.hidden = false; } else oi.hidden = true;
+  $('ovT').textContent = o.title;
+  $('ovScore').textContent = o.score || ''; $('ovScore').hidden = !o.score;
+  $('ovStats').textContent = o.stats || ''; $('ovStats').hidden = !o.stats;
+  $('ovB').textContent = o.body || ''; $('ovB').hidden = !o.body;
+  if (o.callout) { $('ovNewL').textContent = o.callout.label; $('ovNewT').textContent = o.callout.head; $('ovNewB').textContent = o.callout.text; drawPowerIcon(o.callout.c, o.callout.p); }
+  $('ovNew').hidden = !o.callout;
+  $('ovBtn').textContent = o.btn; ovFn = o.fn;
+  $('ovMeta').textContent = o.meta || ''; $('ovMeta').hidden = !o.meta;
   $('ov').classList.add('show');
 }
 function hideOverlay(){ $('ov').classList.remove('show'); }
@@ -889,7 +926,7 @@ soundUI();
 function pause(){
   if (state !== 'play') return;
   prevState = state; state = 'paused'; down = false;
-  showOverlay('Paused', 'Score ' + score.toLocaleString() + '.', 'Resume', () => { state = prevState; hideOverlay(); musicSync(); }, 'n0');
+  showOverlay({ title: 'Paused', face: 'n0', score: 'Score ' + score.toLocaleString(), btn: 'Resume', fn: () => { state = prevState; hideOverlay(); musicSync(); } });
 }
 $('bPause').addEventListener('click', pause);
 document.addEventListener('visibilitychange', () => {
@@ -928,7 +965,7 @@ window.addEventListener('orientationchange', resize);
 resize();
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(buildBg);
 demoChain();
-showOverlay('Nonna\'s Marbles', 'Tap where you want to shoot, or hold and drag to line up a shot, then let go to fire. Tap Nonna to swap marbles. Match three or more of a colour before the chain reaches the hole.', 'Play', startGame, 'n0', best > 0 ? bestLine() : '');
+showOverlay({ title: 'Nonna\'s Marbles', face: 'n0', body: 'Tap where you want to shoot, or hold and drag to line up a shot, then let go to fire. Tap Nonna to swap marbles. Match three or more of a colour before the chain reaches the hole.', btn: 'Play', fn: startGame, meta: best > 0 ? bestLine() : '' });
 loadArt().then(() => { buildBg(); buildSprites(); });
 let lastT = 0;
 function frame(t){
