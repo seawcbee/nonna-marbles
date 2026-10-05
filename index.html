@@ -127,6 +127,12 @@ const GLOW = ['#ff2a12', '#ffae00', '#46d20e', '#1f6dff', '#a034ff', '#fff1d6'];
 const DEEP = ['#7a0200', '#8a5200', '#1e5a02', '#002a80', '#42027a', '#8a7a62'];
 const RGB = GLOW.map(hex2rgb), RGBHI = RGB;
 const PCOL = { slow: 3, rew: 1, bomb: 0 };
+const POWER_ORDER = ['rew', 'slow', 'bomb'];
+const POWER_INTRO = {
+  rew: 'New power-up: yellow Rewind marbles. Pop one and the whole chain rolls back towards the start.',
+  slow: 'New power-up: blue Slow marbles. Pop one and the chain crawls for 7 seconds.',
+  bomb: 'New power-up: red Bomb marbles. Pop one and your next shot explodes, clearing every marble nearby.'
+};
 const START_S = 72; // head never sits further back than this, so one marble is always on screen
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage'), wrap = $('wrap');
@@ -459,8 +465,11 @@ function say(text, m, force){
 const PN = { slow: 'Slow', rew: 'Rewind', bomb: 'Bomb' };
 function spawnPower(){
   sinceP++;
-  if (level === 4 && total - remaining === 5) { sinceP = 0; return 'slow'; }
-  if (level >= 4 && sinceP >= 6 && Math.random() < .3) { sinceP = 0; return ['slow', 'rew', 'bomb'][rnd(3)]; }
+  // one new power-up unlocks per level: 2 = Rewind, 3 = Slow, 4 = Bomb. The new one always shows up early in its level.
+  const unlocked = POWER_ORDER.filter((p, i) => level >= i + 2);
+  const fresh = POWER_ORDER[level - 2];
+  if (fresh && total - remaining === 5) { sinceP = 0; return fresh; }
+  if (unlocked.length && sinceP >= 6 && Math.random() < .3) { sinceP = 0; return unlocked[rnd(unlocked.length)]; }
   return null;
 }
 function slotUI(){}
@@ -661,7 +670,7 @@ function endLevelCheck(){
   if (remaining === 0 && balls.length === 0) {
     state = 'clear'; score += 100 * level; hud(); say('Bravissimo!', 'happy', true);
     tone(520, .15, 'sine', .2); setTimeout(() => tone(660, .15, 'sine', .2), 140); setTimeout(() => tone(880, .3, 'sine', .2), 280);
-    showOverlay('Level ' + level + ' cleared', 'Score ' + score.toLocaleString() + (level + 1 === 4 ? '. Level 4 adds power-up marbles. Pop one and its power starts straight away.' : '. The next chain is faster' + (Math.min(6, 2 + Math.ceil((level + 1) / 2)) > nc ? ' and adds a new color.' : '.')), 'Start level ' + (level + 1), () => { level++; startLevel(); }, 'n1');
+    showOverlay('Level ' + level + ' cleared', 'Score ' + score.toLocaleString() + (POWER_ORDER[level - 1] ? '. ' + POWER_INTRO[POWER_ORDER[level - 1]] : '. The next chain is faster' + (Math.min(6, 2 + Math.ceil((level + 1) / 2)) > nc ? ' and adds a new color.' : '.')), 'Start level ' + (level + 1), () => { level++; startLevel(); }, 'n1');
   } else if (balls.length && balls[0].s >= L - 4) {
     state = 'dying'; tone(240, .7, 'sawtooth', .1, 60); buzz(60);
   }
