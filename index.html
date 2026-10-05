@@ -498,10 +498,12 @@ function speak(k){
   return voEnd - AC.currentTime;
 }
 let lastLine = null, moodDur = 1.5;
+// power-up lines, used automatically once the recordings are added
+const POWER_LINE = { slow: ['Piano, piano!', 'Piano_piano'], rew: ['Indietro!', 'Indietro'] };
 function pickLine(set){ let l; do { l = set[rnd(set.length)]; } while (l === lastLine); lastLine = l; return l; }
 function say(text, m, force, clip){
   const now = performance.now();
-  if (!force && now - lastSay < (m === 'scold' ? 4000 : 9000)) return; // praise at most every 9s, scolding every 4s
+  if (!force && now - lastSay < 6000) return; // scolding at most every 6 seconds
   lastSay = now; mood = m;
   // her face (and the enlarged pop) lasts as long as she is actually speaking
   const spoke = clip ? speak(clip) : 0;
@@ -526,8 +528,10 @@ function grant(p, x, y){
   else bombArmed = true;
   pops.push({ x, y: y - 26, t: { slow: 'Slow!', rew: 'Rewind!', bomb: 'Bomb ready!' }[p], life: .9, size: 22, v: 70 });
   tone(700, .14, 'sine', .2, 1100); buzz(25);
-  // she always cheers when you pop a power-up
-  { const l = pickLine(PRAISE); say(l[0], 'happy', true, l[1]); }
+  // she always reacts to a power-up: its own line once recorded, otherwise a cheer
+  const pl = POWER_LINE[p];
+  if (pl && window.VOICE && window.VOICE[pl[1]]) say(pl[0], 'happy', true, pl[1]);
+  else { const l = pickLine(PRAISE); say(l[0], 'happy', true, l[1]); }
 }
 function applyRewind(){
   if (!rewPending) return;
@@ -547,6 +551,7 @@ function usePower(){
 }
 function explode(sh){
   let n = 0;
+  if (window.VOICE && window.VOICE.Bumm) say('Bumm!', 'happy', true, 'Bumm');
   for (let k = balls.length - 1; k >= 0; k--) {
     const b = balls[k]; if (b.s < 0) continue;
     if (Math.hypot(b.x - sh.x, b.y - sh.y) < 85) {
@@ -600,7 +605,7 @@ function tryRun(i){
   balls.splice(l, n);
   tone(480 * (1 + .14 * (m - 1)), .16, 'sine', .22, 900 * (1 + .1 * (m - 1)));
   buzz(12);
-  if (Math.random() < (m > 1 ? .6 : .12)) { const l = pickLine(PRAISE); say(l[0], 'happy', false, l[1]); }
+  if (m > 1) { const l = pickLine(PRAISE); say(l[0], 'happy', true, l[1]); } // only combos get praise
   validateAmmo();
   return true;
 }
@@ -623,7 +628,7 @@ function insertShot(sh, j){
   else {
     chainMul = 0; tone(190, .07, 'sine', .14);
     const same = (balls[i - 1] && balls[i - 1].c === nb.c) || (balls[i + 1] && balls[i + 1].c === nb.c);
-    if (!same && Math.random() < .75) { const l = pickLine(SCOLD); say(l[0], 'scold', false, l[1]); }
+    if (!same && Math.random() < .5) { const l = pickLine(SCOLD); say(l[0], 'scold', false, l[1]); }
   }
 }
 function moveChain(dt){
