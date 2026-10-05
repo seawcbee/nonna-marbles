@@ -478,6 +478,33 @@ function spawnColor(){
 // each line is [on-screen text, recorded voice clip]
 const SCOLD = [['Ma che fai?!', 'Ma_che_fai'], ['Madonna mia, no!', 'Madonna_mia_no'], ['Ma sei matta?!', 'Ma_sei_matta'], ['Che disastro!', 'Che_disastro'], ['Mamma mia, no!', 'Mama_mia_no'], ['Ma dai!', 'Madai']];
 const PRAISE = [['Brava!', 'Brava'], ['Bravissima, tesoro!', 'Bravisima_tesoro'], ['Che brava!', 'Che_brava'], ['Mangia, mangia!', 'manga_manga'], ['Ecco, così!', 'Eco_Cosi'], ['Bene, bene!', 'Bene_Bene']];
+/* ---------- background music: one track per level, quiet, fades under Nonna's voice ---------- */
+const MUSIC_N = 11, MUSIC_VOL = .3;
+const MUSIC_BASE = /github\.io$/.test(location.hostname) ? '' : 'https://seawcbee.github.io/nonna-marbles/';
+let musicOn = true; try { musicOn = localStorage.getItem('nm-music') !== '0'; } catch (e) {}
+let mEl = null, mGain = null, mIdx = -1, duckUntil = 0;
+function musicSync(){
+  if (!AC) return;
+  if (!mEl) {
+    try {
+      mEl = new Audio(); mEl.loop = true; mEl.crossOrigin = 'anonymous'; mEl.preload = 'auto';
+      const src = AC.createMediaElementSource(mEl); mGain = AC.createGain(); mGain.gain.value = 0;
+      src.connect(mGain); mGain.connect(AC.destination);
+    } catch (e) { mEl = null; return; }
+  }
+  const want = (level - 1) % MUSIC_N;
+  if (want !== mIdx) { mIdx = want; mEl.src = MUSIC_BASE + 'music' + (want + 1) + '.mp3'; }
+  if (musicOn && !muted && state !== 'menu') mEl.play().catch(() => {}); else mEl.pause();
+}
+function musicTick(dt){
+  if (!mGain || !AC) return;
+  let t = 0;
+  if (musicOn && !muted) {
+    if (state === 'play') t = MUSIC_VOL; else if (state === 'paused' || state === 'clear') t = MUSIC_VOL * .45;
+    if (AC.currentTime < duckUntil) t *= .3;               // dip while she speaks
+  }
+  const g = mGain.gain.value; mGain.gain.value = g + (t - g) * Math.min(1, dt * 5);
+}
 /* ---------- voice clips: decoded on first tap, played through the same mute switch ---------- */
 const VO = {}; let voLoading = false, voSrc = null, voEnd = 0;
 function loadVoice(){
@@ -488,26 +515,32 @@ function loadVoice(){
     AC.decodeAudioData(buf.buffer).then(b => { VO[k] = b; }).catch(() => {});
   }
 }
-function speak(k, now){
+function speak(k, now, queue){
   if (muted || !AC || !VO[k]) return 0;
   if (now) { try { if (voSrc) voSrc.stop(); } catch (e) {} voEnd = 0; } // 'Bumm!' lands on the impact, cutting off anything else
   // never cut her off: if she is mid-line, the new line waits until she has finished
+  if (!now && !queue && voEnd > AC.currentTime + .05) return 0; // she's still talking: skip stale lines
   const at = Math.max(AC.currentTime, voEnd + .15);
   const src = AC.createBufferSource(), g = AC.createGain();
   g.gain.value = 1; src.buffer = VO[k]; src.connect(g); g.connect(AC.destination); src.start(at); voSrc = src;
-  voEnd = at + VO[k].duration;
+  voEnd = at + VO[k].duration; duckUntil = voEnd + .2;
   return voEnd - AC.currentTime;
 }
-let lastLine = null, moodDur = 1.5;
+let lastLine = null, moodDur = 1.5, eventSpoke = false, pendingPower = null;
 // power-up lines, used automatically once the recordings are added
 const POWER_LINE = { slow: ['Piano, piano!', 'Piano_piano'], rew: ['Indietro!', 'Indietro'] };
 function pickLine(set){ let l; do { l = set[rnd(set.length)]; } while (l === lastLine); lastLine = l; return l; }
-function say(text, m, force, clip, cut){
+function say(text, m, force, clip, cut, queue){
+  // one voice line per moment: if a power-up and a combo land together, only the first (the power-up) is spoken
+  if (clip && !cut && eventSpoke) return;
+  if (clip && !queue && remaining === 0 && balls.length === 0) return; // last marble popped: the win jingle says 'well done' instead
+  if (clip) eventSpoke = true;
   const now = performance.now();
   if (!force && now - lastSay < 6000) return; // scolding at most every 6 seconds
   lastSay = now; mood = m;
   // her face (and the enlarged pop) lasts as long as she is actually speaking
-  const spoke = clip ? speak(clip, cut) : 0;
+  const spoke = clip ? speak(clip, cut, queue) : 0;
+  if (clip && !spoke && !muted && AC && VO[clip]) return; // skipped: keep her current face too
   moodT = moodDur = Math.max(1.5, spoke || 0);
   pops.push({ x: CX, y: CY - 58, t: text, life: 1.7, size: 19 });
 }
@@ -530,6 +563,11 @@ function grant(p, x, y){
   pops.push({ x, y: y - 26, t: { slow: 'Slow!', rew: 'Rewind!', bomb: 'Bomb ready!' }[p], life: .9, size: 22, v: 70 });
   tone(700, .14, 'sine', .2, 1100); buzz(25);
   // she always reacts to a power-up: its own line once recorded, otherwise a cheer
+  if (!pendingPower) pendingPower = p;
+}
+function flushPowerLine(){
+  const p = pendingPower; pendingPower = null;
+  if (!p || eventSpoke) return;               // a combo already got a line this moment
   const pl = POWER_LINE[p];
   if (pl && window.VOICE && window.VOICE[pl[1]]) say(pl[0], 'happy', true, pl[1]);
   else { const l = pickLine(PRAISE); say(l[0], 'happy', true, l[1]); }
@@ -566,7 +604,8 @@ function explode(sh){
   pops.push({ x: sh.x, y: sh.y - 14, t: '+' + n * 15, life: .7, size: 20, v: 75 });
   rings.push({ x: sh.x, y: sh.y, r: 10, life: .5 });
   pops.push({ x: sh.x, y: sh.y - 36, t: 'Boom!', life: .8, size: 22, v: 75 });
-  tone(110, .35, 'sawtooth', .25, 40); buzz(40); validateAmmo();
+  if (!(VO.Bumm && !muted)) tone(110, .35, 'sawtooth', .25, 40); // her 'Bumm!' replaces the explosion sound
+  buzz(40); validateAmmo();
 }
 function spawn(){
   if (remaining <= 0) return;
@@ -696,7 +735,7 @@ function startLevel(){
   slowT = 0; rewT = 0; bombArmed = false; sinceP = 0; rings = []; moodT = 0; rush = true; rewPending = false;
   slotUI();
   cur = rnd(nc); nxt = rnd(nc); reload = 0;
-  state = 'play'; hideOverlay(); hud();
+  state = 'play'; hideOverlay(); hud(); musicSync();
 }
 function startGame(){ score = 0; level = 1; slot = null; startLevel(); }
 function demoChain(){
@@ -730,11 +769,12 @@ function endLevelCheck(){
   }
 }
 function update(dt){
+  eventSpoke = false;
   if (reload > 0) reload -= dt;
   if (state === 'play') {
     if (slowT > 0) slowT -= dt;
     if (rewT > 0) rewT -= dt;
-    spawn(); moveChain(dt); syncPos(dt); updateShots(dt); applyRewind(); endLevelCheck();
+    spawn(); moveChain(dt); syncPos(dt); updateShots(dt); flushPowerLine(); applyRewind(); endLevelCheck();
   } else if (state === 'dying') {
     for (let i = balls.length - 1; i >= 0; i--) {
       const b = balls[i]; b.s += 720 * dt; b.vs = b.s;
@@ -746,7 +786,7 @@ function update(dt){
     }
     syncPos(dt, true);
     if (!balls.length) {
-      state = 'over'; say('Mamma mia, no!', 'scold', true, 'Mama_mia_no');
+      state = 'over'; say('Mamma mia, no!', 'scold', true, 'Mama_mia_no', false, true);
       if (score > best) { best = score; try { localStorage.setItem('frogstone-best', best); } catch (e) {} }
       showOverlay('Mamma mia, it got through', 'Score ' + score.toLocaleString() + '. Best ' + best.toLocaleString() + '.', 'Play again', startGame, 'n2');
     }
@@ -955,12 +995,22 @@ function hideOverlay(){ $('ov').classList.remove('show'); }
 $('ovBtn').addEventListener('click', () => { audio(); if (ovFn) ovFn(); });
 const iconOn = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const iconOff = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-$('bSound').innerHTML = iconOn;
+const iconNoMusic = '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M19 4.5v8.2a2 2 0 1 1-1.4-1.9V4.5z"/><path d="M16 16l6 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+function soundUI(){
+  const b = $('bSound');
+  b.innerHTML = muted ? iconOff : musicOn ? iconOn : iconNoMusic;
+  b.setAttribute('aria-label', muted ? 'Sound off' : musicOn ? 'Sound and music on' : 'Music off');
+}
+// tap cycles: sound + music -> sound only -> silent -> sound + music
 $('bSound').addEventListener('click', () => {
-  audio(); muted = !muted;
-  $('bSound').innerHTML = muted ? iconOff : iconOn;
-  $('bSound').setAttribute('aria-label', muted ? 'Sound off' : 'Sound on');
+  audio();
+  if (!muted && musicOn) musicOn = false;
+  else if (!muted) muted = true;
+  else { muted = false; musicOn = true; }
+  try { localStorage.setItem('nm-music', musicOn ? '1' : '0'); } catch (e) {}
+  soundUI(); musicSync();
 });
+soundUI();
 function pause(){
   if (state !== 'play') return;
   prevState = state; state = 'paused'; down = false;
@@ -1006,6 +1056,7 @@ let lastT = 0;
 function frame(t){
   const dt = Math.min(.033, (t - lastT) / 1000 || 0); lastT = t; time += dt;
   if (state !== 'paused') update(dt);
+  musicTick(dt);
   draw(dt);
   requestAnimationFrame(frame);
 }
