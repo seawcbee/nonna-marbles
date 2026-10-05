@@ -122,7 +122,7 @@ const COLORS = [
   { base:'#9a5be0', hi:'#d8b8ff', lo:'#4a1f85', glyph:'star'     },
   { base:'#e8e4d8', hi:'#ffffff', lo:'#8a8472', glyph:'cross'    }
 ];
-const START_S = 45;
+const START_S = 72; // head never sits further back than this, so one marble is always on screen
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage'), wrap = $('wrap');
 const rnd = n => Math.floor(Math.random() * n);
@@ -393,14 +393,14 @@ function slotUI(){}
 function grant(p, x, y){
   if (p === 'bomb' && bombArmed) { score += 50; pops.push({ x, y: y - 34, t: '+50', life: 1, size: 16 }); return; }
   if (p === 'slow') { slowT = 7; rewT = 0; }
-  else if (p === 'rew') { rewT = 2.2; slowT = 0; rush = false; }
+  else if (p === 'rew') { rewT = 2.2; slowT = 0; }
   else bombArmed = true;
   pops.push({ x, y: y - 30, t: { slow: 'Slow!', rew: 'Rewind!', bomb: 'Bomb ready!' }[p], life: 1.4, size: 26 });
   tone(700, .14, 'sine', .2, 1100); buzz(25);
 }
 function applyRewind(){
   if (!rewPending) return;
-  rewPending = false; rush = false;
+  rewPending = false;
   if (!balls.length) return;
   const sh = balls[0].s - START_S;
   if (sh > 0) for (const b of balls) b.s -= sh;
@@ -518,7 +518,7 @@ function moveChain(dt){
     const over = balls[gs[k + 1][0]].s - (balls[gs[k][1]].s - D);
     if (over > 0) for (let i = 0; i <= gs[k][1]; i++) balls[i].s += over;
   }
-  if (rewT > 0 && h0 > START_S && balls[0].s < START_S) { const d = START_S - balls[0].s; for (const b of balls) b.s += d; }
+  if (balls[0].s < START_S) { const d = START_S - balls[0].s; for (const b of balls) b.s += d; }
   for (const b of gaps) {
     const i = balls.indexOf(b);
     if (i > 0 && attached(i) && balls[i].c === balls[i - 1].c) { if (tryRun(i)) chainMul++; }
