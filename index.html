@@ -142,15 +142,65 @@ function loadArt(){
   return Promise.all(jobs);
 }
 
-/* ---------- path: leader from below the screen, then a spiral inward ---------- */
-const pts = []; let L = 0;
-(function buildPath(){
-  const raw = [[CX - 162, H + 30], [CX - 162, CY]];
-  const th0 = Math.PI, th1 = Math.PI * 5, r0 = 162, r1 = 84, steps = 1000;
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps, th = th0 + (th1 - th0) * t, r = r0 + (r1 - r0) * t;
-    raw.push([CX + r * Math.cos(th), CY + r * Math.sin(th)]);
+/* ---------- tracks: 15 layouts, one per level, cycling ---------- */
+// Every track starts with a straight leader rising from below the screen, then the shape, ending at the hole.
+function spiralTrack(o){
+  const { a0 = Math.PI, dir = 1, turns = 2, r0 = 162, r1 = 84, sx = 1, sy = 1, wob = 0, k = 0, p = 2 } = o;
+  const out = [], steps = 1400;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps, th = a0 + dir * turns * TAU * t;
+    const r = r0 + (r1 - r0) * t + wob * Math.sin(k * (th - a0));
+    const c = Math.cos(th), s = Math.sin(th);
+    const q = p === 2 ? 1 : 1 / Math.pow(Math.pow(Math.abs(c), p) + Math.pow(Math.abs(s), p), 1 / p);
+    out.push([CX + r * c * q * sx, CY + r * s * q * sy]);
   }
+  return out;
+}
+function polyTrack(wp, rad){
+  // straight segments joined by rounded corners
+  const out = [wp[0]];
+  for (let i = 1; i < wp.length - 1; i++) {
+    const a = wp[i - 1], b = wp[i], c = wp[i + 1];
+    const d1 = Math.hypot(b[0] - a[0], b[1] - a[1]), d2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+    const r = Math.min(rad, d1 / 2, d2 / 2);
+    const p1 = [b[0] + (a[0] - b[0]) / d1 * r, b[1] + (a[1] - b[1]) / d1 * r];
+    const p2 = [b[0] + (c[0] - b[0]) / d2 * r, b[1] + (c[1] - b[1]) / d2 * r];
+    out.push(p1);
+    for (let j = 1; j < 12; j++) {
+      const t = j / 12, u = 1 - t;
+      out.push([u * u * p1[0] + 2 * u * t * b[0] + t * t * p2[0], u * u * p1[1] + 2 * u * t * b[1] + t * t * p2[1]]);
+    }
+    out.push(p2);
+  }
+  out.push(wp[wp.length - 1]);
+  return out;
+}
+const TRACKS = [
+  () => spiralTrack({}),                                                                   // 1 classic spiral
+  () => spiralTrack({ a0: 0, dir: -1 }),                                                   // 2 mirrored spiral
+  () => spiralTrack({ sy: 1.42, r0: 160 }),                                                // 3 tall oval
+  () => spiralTrack({ p: 4, r0: 150, r1: 86, turns: 1.6 }),                                            // 4 rounded square
+  () => spiralTrack({ wob: 10, k: 5, r0: 150, r1: 94, turns: 1.2 }),                      // 5 flower
+  () => spiralTrack({ a0: 0, dir: -1, p: 4, sy: 1.38, r0: 146, r1: 86, turns: 1.55 }),     // 6 tall rounded box
+  () => spiralTrack({ a0: 0, dir: -1, wob: 10, k: 4, sy: 1.15, r0: 150, r1: 94, turns: 1.2 }), // 7 clover
+  () => polyTrack([[22, 600], [338, 600], [338, 540], [22, 540], [22, 480], [338, 480], [338, 420],
+                   [22, 420], [22, 110], [140, 110], [140, 240]], 26),                       // 8 snake
+  () => spiralTrack({ sy: 1.48, r0: 160, r1: 108, turns: 1.25 }),                          // 9 big oval
+  () => spiralTrack({ a0: 0, dir: -1, sy: 1.3, wob: 9, k: 3, r0: 150, r1: 86, turns: 1.45 }), // 10 wobbly oval
+  () => spiralTrack({ p: 1.5, r0: 160, r1: 94, turns: 1.5 }),                             // 11 diamond
+  () => polyTrack([[22, 110], [82, 110], [82, 590], [278, 590], [278, 250], [338, 250],
+                   [338, 560]], 26),                                                         // 12 columns
+  () => spiralTrack({ sy: 1.25, wob: 6, k: 6, r0: 160, r1: 88, turns: 1.75 }),             // 13 ripple spiral
+  () => spiralTrack({ a0: 0, dir: -1, p: 3, sy: 1.2, r0: 156, r1: 84, turns: 1.85 }),     // 14 squircle
+  () => spiralTrack({ a0: 0, dir: -1, sy: 1.36, r0: 162, r1: 76, turns: 2.25 })            // 15 long tall spiral
+];
+let pts = [], L = 0, trackNo = 0;
+function buildPath(n){
+  trackNo = n;
+  const shape = TRACKS[n % TRACKS.length]();
+  const st = shape[0];
+  const raw = [[st[0], H + 30], ...shape];
+  pts = [];
   let last = raw[0]; pts.push(last);
   for (let i = 1; i < raw.length; i++) {
     const b = raw[i];
@@ -161,7 +211,9 @@ const pts = []; let L = 0;
     }
   }
   L = pts.length - 1;
-})();
+}
+buildPath(0);
+
 function posAt(s){
   if (s <= 0) return { x: pts[0][0], y: pts[0][1] };
   if (s >= L) return { x: pts[L][0], y: pts[L][1] };
@@ -320,12 +372,27 @@ function buildBg(){
     g.lineTo(pts[L][0], pts[L][1]);
   };
   g.lineJoin = 'round'; g.lineCap = 'round';
-  const tc = art ? ['rgba(40,20,5,.45)', '#d9a74e', '#7a4a20', '#3e2410'] : ['rgba(0,0,0,.4)', '#3f7367', '#17332e', '#0a1b18'];
+  if (art) {
+    // see-through track: two thin rails plus a faint tint, drawn on a layer then laid over the cloth
+    const lc = document.createElement('canvas'); lc.width = bgC.width; lc.height = bgC.height;
+    const t = lc.getContext('2d'); t.setTransform(px, 0, 0, px, 0, 0); t.lineJoin = 'round'; t.lineCap = 'round';
+    const tr = () => { t.beginPath(); t.moveTo(pts[0][0], pts[0][1]); for (let i = 3; i <= L; i += 3) t.lineTo(pts[i][0], pts[i][1]); t.lineTo(pts[L][0], pts[L][1]); };
+    tr(); t.strokeStyle = 'rgba(60,30,5,.35)'; t.lineWidth = 38; t.stroke();
+    tr(); t.strokeStyle = 'rgba(255,246,225,.95)'; t.lineWidth = 35; t.stroke();
+    t.globalCompositeOperation = 'destination-out';
+    tr(); t.strokeStyle = '#000'; t.lineWidth = 30; t.stroke();
+    t.globalCompositeOperation = 'source-over';
+    tr(); t.strokeStyle = 'rgba(90,50,20,.12)'; t.lineWidth = 30; t.stroke();
+    tr(); t.setLineDash([.1, 14]); t.strokeStyle = 'rgba(255,246,225,.75)'; t.lineWidth = 3; t.stroke();
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(lc, 0, 0); g.restore();
+  } else {
+  const tc = ['rgba(0,0,0,.4)', '#3f7367', '#17332e', '#0a1b18'];
   trace(); g.strokeStyle = tc[0]; g.lineWidth = 42; g.stroke();
   trace(); g.strokeStyle = tc[1]; g.lineWidth = 36; g.stroke();
   trace(); g.strokeStyle = tc[2]; g.lineWidth = 34; g.stroke();
   trace(); g.strokeStyle = tc[3]; g.lineWidth = 31; g.stroke();
   trace(); g.setLineDash([.1, 14]); g.strokeStyle = 'rgba(224,169,59,.3)'; g.lineWidth = 3.2; g.stroke(); g.setLineDash([]);
+  }
   const hx = pts[L][0], hy = pts[L][1];
   if (IMG.hole) {
     g.fillStyle = 'rgba(30,15,0,.4)'; g.beginPath(); g.arc(hx, hy + 2, 31, 0, TAU); g.fill();
@@ -552,6 +619,7 @@ function updateShots(dt){
 
 /* ---------- game flow ---------- */
 function startLevel(){
+  buildPath(level - 1); buildBg();
   balls = []; shots = []; parts = []; pops = [];
   nc = Math.min(6, 2 + Math.ceil(level / 2));
   remaining = 18 + level * 4; total = remaining; chainMul = 0;
@@ -642,8 +710,8 @@ function bombIcon(x, y, k){
   ctx.fillStyle = f > .5 ? '#ffd25a' : '#ff6a3a'; ctx.beginPath(); ctx.arc(13, -15, 3 + f * 1.5, 0, TAU); ctx.fill();
   ctx.restore();
 }
-function badge(kind, x, y){
-  ctx.save(); ctx.translate(x, y);
+function badge(kind, x, y, sc){
+  ctx.save(); ctx.translate(x, y); if (sc) ctx.scale(sc, sc);
   ctx.beginPath(); ctx.arc(0, 0, 8.5, 0, TAU); ctx.fillStyle = 'rgba(8,22,18,.9)'; ctx.fill();
   ctx.lineWidth = 1.6; ctx.strokeStyle = '#e0a93b'; ctx.stroke();
   ctx.strokeStyle = '#f3ead2'; ctx.fillStyle = '#f3ead2'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
@@ -667,6 +735,9 @@ function drawFrog(){
   if (IMG.n0) {
     // ceramic plate
     ctx.save(); ctx.translate(CX, CY);
+    const env = moodT > 0 ? Math.min(1, (1.5 - moodT) / .12) * Math.min(1, moodT / .35) : 0;
+    const pop = 1 + .38 * env * env * (3 - 2 * env);
+    ctx.scale(pop, pop);
     ctx.fillStyle = 'rgba(40,20,5,.35)'; ctx.beginPath(); ctx.arc(0, 3, 54, 0, TAU); ctx.fill();
     const pg = ctx.createRadialGradient(-10, -14, 6, 0, 0, 54);
     pg.addColorStop(0, '#fffaf0'); pg.addColorStop(1, '#e6d8b8');
@@ -678,7 +749,7 @@ function drawFrog(){
     const im = (mad && IMG.n2) || (happy && IMG.n1) || IMG.n0;
     const shake = mad ? (Math.random() - .5) * 2.4 : 0;
     ctx.translate(-ca * reload * 8 + shake, -sa * reload * 5 + 6); ctx.rotate(ca * .1);
-    ctx.drawImage(im, -54, -56, 108, 108);
+    ctx.drawImage(im, -66, -58, 132, 132);
     ctx.restore();
     ball(nxt, CX + 36, CY + 36, .55);
     const t = reload > 0 ? 1 - reload / .18 : 1;
@@ -753,8 +824,20 @@ function draw(dt){
     const b = balls[i]; if (b.vs < -D) continue;
     const p = posAt(b.vs);
     if (p.y > H + R) continue;
-    ball(b.c, p.x + b.ox, p.y + b.oy);
-    if (b.p) badge(b.p, p.x + b.ox, p.y + b.oy);
+    const bx = p.x + b.ox, by = p.y + b.oy;
+    if (b.p) {
+      const k = .5 + .5 * Math.sin(time * 7);
+      const gl = ctx.createRadialGradient(bx, by, R * .6, bx, by, R + 12 + 5 * k);
+      gl.addColorStop(0, 'rgba(255,214,90,' + (.55 + .35 * k) + ')'); gl.addColorStop(1, 'rgba(255,214,90,0)');
+      ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(bx, by, R + 12 + 5 * k, 0, TAU); ctx.fill();
+    }
+    ball(b.c, bx, by);
+    if (b.p) {
+      const k = .5 + .5 * Math.sin(time * 7);
+      ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(255,225,120,' + (.5 + .5 * k) + ')';
+      ctx.beginPath(); ctx.arc(bx, by, R + 2 + 3 * k, 0, TAU); ctx.stroke();
+      badge(b.p, bx, by, 1.15 + .2 * k);
+    }
   }
   if (state === 'menu') frogA = -Math.PI / 2 + Math.sin(time * .9) * .55;
   else { let d = aimA - frogA; d = Math.atan2(Math.sin(d), Math.cos(d)); frogA += d * Math.min(1, dt * 22); }
