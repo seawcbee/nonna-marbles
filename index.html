@@ -122,6 +122,8 @@ const COLORS = [
   { base:'#9a5be0', hi:'#d8b8ff', lo:'#4a1f85', glyph:'star'     },
   { base:'#e8e4d8', hi:'#ffffff', lo:'#8a8472', glyph:'cross'    }
 ];
+const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)).join(',');
+const RGB = COLORS.map(c => hex2rgb(c.base)), RGBHI = COLORS.map(c => hex2rgb(c.hi));
 const START_S = 72; // head never sits further back than this, so one marble is always on screen
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage'), wrap = $('wrap');
@@ -828,15 +830,16 @@ function draw(dt){
     if (b.p) {
       const k = .5 + .5 * Math.sin(time * 7);
       const gl = ctx.createRadialGradient(bx, by, R * .6, bx, by, R + 12 + 5 * k);
-      gl.addColorStop(0, 'rgba(255,214,90,' + (.55 + .35 * k) + ')'); gl.addColorStop(1, 'rgba(255,214,90,0)');
+      const rgb = RGB[b.c];
+      gl.addColorStop(0, 'rgba(' + rgb + ',' + (.6 + .35 * k) + ')'); gl.addColorStop(1, 'rgba(' + rgb + ',0)');
       ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(bx, by, R + 12 + 5 * k, 0, TAU); ctx.fill();
     }
     ball(b.c, bx, by);
     if (b.p) {
       const k = .5 + .5 * Math.sin(time * 7);
-      ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(255,225,120,' + (.5 + .5 * k) + ')';
+      ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(' + RGBHI[b.c] + ',' + (.55 + .45 * k) + ')';
       ctx.beginPath(); ctx.arc(bx, by, R + 2 + 3 * k, 0, TAU); ctx.stroke();
-      badge(b.p, bx, by, 1.15 + .2 * k);
+      badge(b.p, bx, by, .9 + .12 * k);
     }
   }
   if (state === 'menu') frogA = -Math.PI / 2 + Math.sin(time * .9) * .55;
