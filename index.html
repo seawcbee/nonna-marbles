@@ -469,20 +469,23 @@ function loadVoice(){
   }
 }
 function speak(k){
-  if (muted || !AC || !VO[k]) return;
+  if (muted || !AC || !VO[k]) return 0;
   // never cut her off: if she is mid-line, the new line waits until she has finished
   const at = Math.max(AC.currentTime, voEnd + .15);
   const src = AC.createBufferSource(), g = AC.createGain();
   g.gain.value = 1; src.buffer = VO[k]; src.connect(g); g.connect(AC.destination); src.start(at); voSrc = src;
   voEnd = at + VO[k].duration;
+  return voEnd - AC.currentTime;
 }
-let lastLine = null;
+let lastLine = null, moodDur = 1.5;
 function pickLine(set){ let l; do { l = set[rnd(set.length)]; } while (l === lastLine); lastLine = l; return l; }
 function say(text, m, force, clip){
   const now = performance.now();
   if (!force && now - lastSay < (m === 'scold' ? 4000 : 9000)) return; // praise at most every 9s, scolding every 4s
-  lastSay = now; mood = m; moodT = 1.5;
-  if (clip) speak(clip);
+  lastSay = now; mood = m;
+  // her face (and the enlarged pop) lasts as long as she is actually speaking
+  const spoke = clip ? speak(clip) : 0;
+  moodT = moodDur = Math.max(1.5, spoke || 0);
   pops.push({ x: CX, y: CY - 58, t: text, life: 1.7, size: 19 });
 }
 const PN = { slow: 'Slow', rew: 'Rewind', bomb: 'Bomb' };
@@ -775,7 +778,7 @@ function drawFrog(){
   if (IMG.n0) {
     // ceramic plate
     ctx.save(); ctx.translate(CX, CY);
-    const env = moodT > 0 ? Math.min(1, (1.5 - moodT) / .12) * Math.min(1, moodT / .35) : 0;
+    const env = moodT > 0 ? Math.min(1, (moodDur - moodT) / .12) * Math.min(1, moodT / .35) : 0;
     const pop = 1 + .38 * env * env * (3 - 2 * env);
     ctx.scale(pop, pop);
     ctx.fillStyle = 'rgba(40,20,5,.35)'; ctx.beginPath(); ctx.arc(0, 3, 54, 0, TAU); ctx.fill();
