@@ -454,9 +454,9 @@ function baseV(){
   if (rewT > 0) return -130;
   let v = Math.min(40, 11 + 2 * level);
   if (slowT > 0) v *= .1;
-  // sprint back in whenever the front of the chain is near the start; Slow never dampens this
+  // sprint back in whenever the front of the chain is near the start
   const h = balls[0];
-  if (rush && h && h.s < 320) v += 110 * (1 - h.s / 320);
+  if (rush && h && h.s < 320) v += 110 * (1 - h.s / 320) * (slowT > 0 ? .2 : 1); // Slow tames the sprint too: piano, piano
   return v;
 }
 function pickColor(){
@@ -482,7 +482,7 @@ const PRAISE = [['Brava!', 'Brava'], ['Bravissima, tesoro!', 'Bravisima_tesoro']
 const MUSIC_N = 11, MUSIC_VOL = .3;
 const MUSIC_BASE = /github\.io$/.test(location.hostname) ? '' : 'https://seawcbee.github.io/nonna-marbles/';
 let musicOn = true; try { musicOn = localStorage.getItem('nm-music') !== '0'; } catch (e) {}
-let mEl = null, mGain = null, mIdx = -1, duckUntil = 0;
+let mEl = null, mGain = null, mIdx = -1, mPending = -1, duckUntil = 0;
 function musicSync(){
   if (!AC) return;
   if (!mEl) {
@@ -493,8 +493,16 @@ function musicSync(){
     } catch (e) { mEl = null; return; }
   }
   const want = (level - 1) % MUSIC_N;
-  if (want !== mIdx) { mIdx = want; mEl.src = MUSIC_BASE + 'music' + (want + 1) + '.mp3'; }
+  if (want !== mIdx) {
+    // the old song keeps playing (also on the win screen) and only fades out once the next level starts
+    if (mIdx < 0 || mGain.gain.value < .01 || mEl.paused) switchSong(want); else mPending = want;
+  }
   if (musicOn && !muted && state !== 'menu') mEl.play().catch(() => {}); else mEl.pause();
+}
+function switchSong(i){
+  mIdx = i; mPending = -1; mGain.gain.value = 0;                  // new song starts silent and fades in
+  mEl.src = MUSIC_BASE + 'music' + (i + 1) + '.mp3';
+  if (musicOn && !muted && state !== 'menu') mEl.play().catch(() => {});
 }
 function musicTick(dt){
   if (!mGain || !AC) return;
@@ -503,7 +511,8 @@ function musicTick(dt){
     if (state === 'play') t = MUSIC_VOL; else if (state === 'paused' || state === 'clear') t = MUSIC_VOL * .45;
     if (AC.currentTime < duckUntil) t *= .3;               // dip while she speaks
   }
-  const g = mGain.gain.value; mGain.gain.value = g + (t - g) * Math.min(1, dt * 5);
+  if (mPending >= 0) { t = 0; if (mGain.gain.value < .008) { switchSong(mPending); return; } } // fading out the previous song
+  const g = mGain.gain.value; mGain.gain.value = g + (t - g) * Math.min(1, dt * (t < g ? (mPending >= 0 ? 3.5 : 5) : .9)); // ~1s fade out, ~3s fade in
 }
 /* ---------- voice clips: decoded on first tap, played through the same mute switch ---------- */
 const VO = {}; let voLoading = false, voSrc = null, voEnd = 0;
